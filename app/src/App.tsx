@@ -36,6 +36,9 @@ import { MovementHistoryView } from './components/views/MovementHistoryView';
 import { Toast, NotificationType } from './components/ui/Toast';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+console.log('--- DIAGNÓSTICO DE CONEXIÓN ---');
+console.log('API_URL detectada:', API_URL);
+console.log('------------------------------');
 
 const App: React.FC = () => {
     // persistent notifications state
