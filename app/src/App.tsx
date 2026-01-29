@@ -78,7 +78,20 @@ const App: React.FC = () => {
 
             setArticles(artRes);
             setMovements(movRes);
-            setLoads(loadRes);
+
+            // Transform backend loads to frontend format
+            const transformedLoads = loadRes.map((l: any) => ({
+                load_uid: l.ref_carga,
+                ref_carga: l.ref_carga,
+                precinto: l.matricula, // Using matricula as precinto for view if not separate
+                flete: l.equipo,
+                date: l.fecha.split('T')[0],
+                consumptions: typeof l.consumos_json === 'string' ? JSON.parse(l.consumos_json) : (l.consumos_json || {}),
+                duplicado: false,
+                modificada: false,
+                original_fingerprint: ''
+            }));
+            setLoads(transformedLoads);
         } catch (err) {
             notify('Error al conectar con el servidor. Verifica que el backend esté corriendo.', 'error');
         } finally {
@@ -146,6 +159,86 @@ const App: React.FC = () => {
         }
     };
 
+    const handleSaveInbound = async (data: any) => {
+        try {
+            const movement = {
+                sku: data.sku,
+                tipo: 'ENTRADA',
+                cantidad: data.quantity,
+                motivo: `${data.type}: ${data.proveedor || ''} ${data.albaran || ''}`.trim(),
+                usuario: currentUser?.name,
+                periodo: data.date.slice(0, 7)
+            };
+
+            const res = await fetch(`${API_URL}/api/movements`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(movement)
+            });
+
+            if (!res.ok) throw new Error();
+
+            notify(`Entrada registrada: ${data.quantity} un. de ${data.sku}`);
+            fetchData(); // Refresh all state
+            setActiveTab('dashboard');
+        } catch (e) {
+            notify('Error al registrar la entrada.', 'error');
+        }
+    };
+
+    const handleSaveManualConsumption = async (data: any) => {
+        try {
+            const movement = {
+                sku: data.sku,
+                tipo: 'SALIDA',
+                cantidad: data.quantity,
+                motivo: data.reason,
+                usuario: currentUser?.name,
+                periodo: data.date.slice(0, 7)
+            };
+
+            const res = await fetch(`${API_URL}/api/movements`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(movement)
+            });
+
+            if (!res.ok) throw new Error();
+
+            notify(`Salida registrada: ${data.quantity} un. de ${data.sku}`);
+            fetchData();
+            setActiveTab('dashboard');
+        } catch (e) {
+            notify('Error al registrar el consumo.', 'error');
+        }
+    };
+
+    const handleRegularize = async (adjustment: any) => {
+        try {
+            const movement = {
+                sku: adjustment.sku,
+                tipo: adjustment.delta > 0 ? 'ENTRADA' : 'SALIDA',
+                cantidad: Math.abs(adjustment.delta),
+                motivo: `Regularización: ${adjustment.reason}`,
+                usuario: currentUser?.name,
+                periodo: adjustment.date.slice(0, 7)
+            };
+
+            const res = await fetch(`${API_URL}/api/movements`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(movement)
+            });
+
+            if (!res.ok) throw new Error();
+
+            notify(`Ajuste de stock realizado para ${adjustment.sku}`);
+            fetchData();
+        } catch (e) {
+            notify('Error al regularizar stock.', 'error');
+        }
+    };
+
     const handleUpdateBillingOverride = (id: string, qty: number) => {
         setBillingOverrides(prev => ({ ...prev, [id]: qty }));
     };
@@ -185,11 +278,57 @@ const App: React.FC = () => {
                         <ArticlesMasterView
                             inventory={inventoryStatus}
                             onSave={handleSaveArticle}
-                            onRegularize={() => { }} // TODO
-                            onToggleStatus={() => { }} // TODO
+                            onRegularize={handleRegularize}
+                            onToggleStatus={(sku) => {
+                                const art = articles.find(a => a.sku === sku);
+                                if (art) handleSaveArticle({ ...art, activo: !art.activo }, true);
+                            }}
                             deepLinkSku={editingSku}
                             clearDeepLink={() => setEditingSku(null)}
                             currentUser={currentUser}
+                        />
+                    )}
+
+                    {activeTab === 'inbound' && (
+                        <InboundForm
+                            articles={articles.filter(a => a.activo)}
+                            onSubmit={handleSaveInbound}
+                            notify={notify}
+                            isMonthOpen={isMonthOpen}
+                            onNavigateMaster={() => setActiveTab('master')}
+                        />
+                    )}
+
+                    {activeTab === 'loads' && (
+                        <OperationalLoadsView
+                            articles={articles}
+                            loads={loads}
+                            filterMode={loadsFilter}
+                            setFilterMode={setLoadsFilter}
+                            isMonthOpen={isMonthOpen}
+                            onArticleClick={(sku) => {
+                                setEditingSku(sku);
+                                setActiveTab('master');
+                            }}
+                        />
+                    )}
+
+                    {activeTab === 'manual' && (
+                        <ManualConsumptionForm
+                            articles={inventoryStatus.filter(a => a.activo)}
+                            onSubmit={handleSaveManualConsumption}
+                            notify={notify}
+                            isMonthOpen={isMonthOpen}
+                        />
+                    )}
+
+                    {activeTab === 'history' && (
+                        <MovementHistoryView
+                            articles={articles}
+                            inbounds={movements.filter(m => m.tipo === 'ENTRADA' && !m.motivo.includes('Regularización'))}
+                            manualConsumptions={movements.filter(m => m.tipo === 'SALIDA' && !m.ref_operacion && !m.motivo.includes('Regularización'))}
+                            loads={loads}
+                            adjustments={movements.filter(m => m.motivo.includes('Regularización'))}
                         />
                     )}
 
@@ -206,11 +345,17 @@ const App: React.FC = () => {
                         />
                     )}
 
-                    {/* Other tabs ignored for brevity in this sync step */}
-                    {activeTab !== 'dashboard' && activeTab !== 'master' && activeTab !== 'billing' && (
-                        <div className="bg-amber-50 p-6 rounded-xl border border-amber-200 text-amber-800">
-                            Pestaña "{activeTab}" en mantenimiento por migración a base de datos real.
-                        </div>
+                    {activeTab === 'closings' && (
+                        <MonthClosingView
+                            currentMonth={currentMonth}
+                            loads={loads}
+                            isMonthOpen={isMonthOpen}
+                            setClosings={setClosings}
+                            onJumpToDuplicates={() => {
+                                setLoadsFilter('DUPLICATES');
+                                setActiveTab('loads');
+                            }}
+                        />
                     )}
                 </div>
                 <Toast notifications={notifications} removeNotification={removeNotification} />
