@@ -19,7 +19,7 @@ import {
 import { INITIAL_USERS } from './data/mockData';
 
 // Utils
-import { getCurrentMonth, generateId } from './utils/helpers';
+import { getCurrentMonth, generateId, getToday } from './utils/helpers';
 
 // Components
 import { LoginView } from './components/auth/LoginView';
@@ -79,24 +79,34 @@ const App: React.FC = () => {
                 fetch(`${API_URL}/api/loads`).then(res => res.json())
             ]);
 
-            setArticles(artRes);
-            setMovements(movRes);
+            // Process articles to ensure numbers are numbers (PG returns NUMERIC as string)
+            const processedArticles = Array.isArray(artRes) ? artRes.map((a: any) => ({
+                ...a,
+                stock_inicial: Number(a.stock_inicial) || 0,
+                stock_seguridad: Number(a.stock_seguridad) || 0,
+                lead_time_dias: Number(a.lead_time_dias) || 0,
+                precio_venta: a.precio_venta != null ? Number(a.precio_venta) : undefined,
+                ultimo_coste: a.ultimo_coste != null ? Number(a.ultimo_coste) : undefined,
+            })) : [];
+            setArticles(processedArticles);
+            setMovements(Array.isArray(movRes) ? movRes : []);
 
             // Transform backend loads to frontend format
-            const transformedLoads = loadRes.map((l: any) => ({
+            const transformedLoads = Array.isArray(loadRes) ? loadRes.map((l: any) => ({
                 load_uid: l.ref_carga,
                 ref_carga: l.ref_carga,
-                precinto: l.matricula, // Using matricula as precinto for view if not separate
+                precinto: l.matricula,
                 flete: l.equipo,
-                date: l.fecha.split('T')[0],
+                date: l.fecha ? l.fecha.split('T')[0] : getToday(),
                 consumptions: typeof l.consumos_json === 'string' ? JSON.parse(l.consumos_json) : (l.consumos_json || {}),
                 duplicado: false,
                 modificada: false,
                 original_fingerprint: ''
-            }));
+            })) : [];
             setLoads(transformedLoads);
         } catch (err) {
-            notify('Error al conectar con el servidor. Verifica que el backend esté corriendo.', 'error');
+            console.error('Fetch error:', err);
+            notify('Error al conectar con el servidor.', 'error');
         } finally {
             setIsLoading(false);
         }
@@ -115,26 +125,26 @@ const App: React.FC = () => {
 
             const totalInbound = artMovements
                 .filter(m => m.tipo === 'ENTRADA')
-                .reduce((sum, m) => sum + m.cantidad, 0);
+                .reduce((sum, m) => sum + (Number(m.cantidad) || 0), 0);
 
             const totalOutbound = artMovements
                 .filter(m => m.tipo === 'SALIDA')
-                .reduce((sum, m) => sum + m.cantidad, 0);
+                .reduce((sum, m) => sum + (Number(m.cantidad) || 0), 0);
 
-            const stockActual = art.stock_inicial + totalInbound - totalOutbound;
+            const stockActual = (Number(art.stock_inicial) || 0) + totalInbound - totalOutbound;
 
             // Simple status logic
             let situacion: ArticleStatus = 'Con stock';
             if (stockActual <= 0) situacion = 'Sin stock';
-            else if (stockActual <= art.stock_seguridad) situacion = 'Pedir a proveedor';
+            else if (stockActual <= (Number(art.stock_seguridad) || 0)) situacion = 'Pedir a proveedor';
 
             return {
                 ...art,
                 stockActual,
                 situacion,
                 totalInbound,
-                totalManualOut: 0, // Placeholder
-                totalLoadOut: 0, // Placeholder
+                totalManualOut: 0,
+                totalLoadOut: 0,
                 avgWeeklyConsumption: 0,
                 suggestedOrder: 0,
                 targetStock: 0
@@ -216,15 +226,22 @@ const App: React.FC = () => {
         }
     };
 
-    const handleRegularize = async (adjustment: any) => {
+    const handleRegularize = async (sku: string, qty: number, reason: string, type: 'physical_count' | 'adjustment') => {
         try {
+            const art = articles.find(a => a.sku === sku);
+            if (!art) return;
+
+            // Calculate delta
+            const currentStock = inventoryStatus.find(i => i.sku === sku)?.stockActual || 0;
+            const delta = type === 'physical_count' ? qty - currentStock : qty;
+
             const movement = {
-                sku: adjustment.sku,
-                tipo: adjustment.delta > 0 ? 'ENTRADA' : 'SALIDA',
-                cantidad: Math.abs(adjustment.delta),
-                motivo: `Regularización: ${adjustment.reason}`,
+                sku,
+                tipo: delta > 0 ? 'ENTRADA' : 'SALIDA',
+                cantidad: Math.abs(delta),
+                motivo: `Regularización ${type === 'physical_count' ? '(Inventario)' : '(Ajuste)'}: ${reason}`,
                 usuario: currentUser?.name,
-                periodo: adjustment.date.slice(0, 7)
+                periodo: getCurrentMonth()
             };
 
             const res = await fetch(`${API_URL}/api/movements`, {
@@ -235,7 +252,7 @@ const App: React.FC = () => {
 
             if (!res.ok) throw new Error();
 
-            notify(`Ajuste de stock realizado para ${adjustment.sku}`);
+            notify(`Ajuste de stock realizado para ${sku}`);
             fetchData();
         } catch (e) {
             notify('Error al regularizar stock.', 'error');

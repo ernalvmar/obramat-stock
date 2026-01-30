@@ -21,7 +21,7 @@ export const MonthClosingView: React.FC<MonthClosingViewProps> = ({
 }) => {
     const [showConfirmClose, setShowConfirmClose] = React.useState(false);
 
-    const duplicatesCount = loads.filter(l => l.duplicado && l.date.startsWith(currentMonth)).length;
+    const duplicatesCount = loads.filter(l => l.duplicado && l.date?.startsWith(currentMonth)).length;
     const canClose = duplicatesCount === 0;
 
     const handleCloseMonth = () => {
@@ -72,8 +72,8 @@ export const MonthClosingView: React.FC<MonthClosingViewProps> = ({
                             onClick={handleCloseMonth}
                             disabled={!canClose}
                             className={`px-6 py-3 rounded-md font-medium flex items-center gap-2 ${canClose
-                                    ? 'bg-red-600 text-white hover:bg-red-700'
-                                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                ? 'bg-red-600 text-white hover:bg-red-700'
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                 }`}
                         >
                             <Lock size={18} />

@@ -106,26 +106,27 @@ export const MovementHistoryView: React.FC<MovementHistoryViewProps> = ({
                     <tbody className="divide-y divide-gray-200 bg-white">
                         {filtered.map((row, idx) => {
                             const articleName = articles.find(a => a.sku === row.sku)?.nombre || row.sku;
+                            const qty = Number(row.qty) || 0;
                             return (
                                 <tr key={idx} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.date}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.date || '-'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                         <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium
                       ${row.type === 'Compra' ? 'bg-green-100 text-green-800' : ''}
                       ${row.type === 'Logística Inversa' ? 'bg-teal-100 text-teal-800' : ''}
                       ${row.type === 'Carga Op.' ? 'bg-blue-100 text-blue-800' : ''}
                       ${row.type === 'Salida Manual' ? 'bg-orange-100 text-orange-800' : ''}
-                      ${row.type.includes('Regularización') ? 'bg-purple-100 text-purple-800' : ''}
+                      ${row.type?.includes('Regularización') ? 'bg-purple-100 text-purple-800' : ''}
                     `}>
-                                            {row.type}
+                                            {row.type || 'Movimiento'}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{articleName}</td>
-                                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold text-right ${row.qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                        {row.qty > 0 ? '+' : ''}{row.qty}
+                                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold text-right ${qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        {qty > 0 ? '+' : ''}{qty}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.detail}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{row.user}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.detail || '-'}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{row.user || 'Sistema'}</td>
                                 </tr>
                             );
                         })}

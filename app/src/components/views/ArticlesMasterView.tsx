@@ -382,7 +382,7 @@ export const ArticlesMasterView: React.FC<ArticlesMasterViewProps> = ({
                                     <div className="text-[10px] text-slate-400">Seg: {item.stock_seguridad}</div>
                                 </td>
                                 <td className="px-6 py-4 text-right text-sm font-bold text-blue-700">
-                                    {item.precio_venta ? `${item.precio_venta.toFixed(2)}€` : '-'}
+                                    {item.precio_venta != null ? `${Number(item.precio_venta).toFixed(2)}€` : '-'}
                                 </td>
                                 <td className="px-6 py-4 text-right bg-blue-50/30">
                                     {item.suggestedOrder > 0 ? (
